@@ -185,7 +185,13 @@ def create(module):
                                   catalog_name, network_name, network_mode,
                                   vm_name, vm_cpus, vm_memory, deploy, poweron)
 
+    if task is False:
+        module.fail('unable to create vapp')
+
     module.vca.block_until_completed(task)
+
+    if (network_name != None):
+            connect_to_network(module, vdc_name, vapp_name, network_name, network_mode)
 
 def delete(module):
     vdc_name = module.params['vdc_name']
@@ -225,6 +231,30 @@ def set_state(module):
         if not vapp.undeploy(action):
             module.fail('unable to undeploy vapp')
 
+def connect_to_network(module, vdc_name, vapp_name, network_name, network_mode):
+    
+    nets = filter(lambda n: n.name == network_name, module.vca.get_networks(vdc_name))
+    assert len(nets) == 1
+    the_vdc = module.vca.get_vdc(vdc_name)
+    the_vapp = module.vca.get_vapp(the_vdc, vapp_name)
+    assert the_vapp
+    assert the_vapp.name == vapp_name
+        
+    # Connect vApp
+    task = the_vapp.connect_to_network(nets[0].name, nets[0].href)
+    result = module.vca.block_until_completed(task)
+    assert result
+        
+    # Connect VM
+    if(network_mode == 'pool'):
+        task = the_vapp.connect_vms(nets[0].name, connection_index=0, ip_allocation_mode='POOL')
+    else:
+        if(network_mode == 'dhcp'):
+            task = the_vapp.connect_vms(nets[0].name, connection_index=0, ip_allocation_mode='DHCP')
+        
+    assert task
+    result = module.vca.block_until_completed(task)
+    assert result
 
 def main():
 
